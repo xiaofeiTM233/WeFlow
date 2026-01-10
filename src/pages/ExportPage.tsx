@@ -362,7 +362,26 @@ function ExportPage() {
               <FolderOpen size={16} />
               <span>{exportFolder || '未设置'}</span>
             </div>
-            <p className="path-hint">可在设置页面修改导出目录</p>
+            <button
+              className="select-folder-btn"
+              onClick={async () => {
+                try {
+                  const result = await window.electronAPI.dialog.openFile({
+                    title: '选择导出目录',
+                    properties: ['openDirectory']
+                  })
+                  if (!result.canceled && result.filePaths.length > 0) {
+                    setExportFolder(result.filePaths[0])
+                    await configService.setExportPath(result.filePaths[0])
+                  }
+                } catch (e) {
+                  console.error('选择目录失败:', e)
+                }
+              }}
+            >
+              <FolderOpen size={16} />
+              <span>选择导出目录</span>
+            </button>
           </div>
         </div>
 

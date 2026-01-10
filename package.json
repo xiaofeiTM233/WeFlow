@@ -1,9 +1,9 @@
 {
   "name": "weflow",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "WeFlow - 微信聊天记录查看工具",
   "main": "dist-electron/main.js",
-  "author": "cc", 
+  "author": "cc",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
@@ -64,7 +64,7 @@
     },
     "nsis": {
       "oneClick": false,
-      "differentialPackage":false,
+      "differentialPackage": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "unicode": true,
