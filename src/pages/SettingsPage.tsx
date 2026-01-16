@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { useThemeStore, themes } from '../stores/themeStore'
 import { dialog } from '../services/ipc'
@@ -6,7 +6,7 @@ import * as configService from '../services/config'
 import {
   Eye, EyeOff, FolderSearch, FolderOpen, Search, Copy,
   RotateCcw, Trash2, Save, Plug, Check, Sun, Moon,
-  Palette, Database, Download, HardDrive, Info, RefreshCw
+  Palette, Database, Download, HardDrive, Info, RefreshCw, ChevronDown
 } from 'lucide-react'
 import './SettingsPage.scss'
 
@@ -19,6 +19,11 @@ const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
   { id: 'about', label: '关于', icon: Info }
 ]
 
+interface WxidOption {
+  wxid: string
+  modifiedTime: number
+}
+
 function SettingsPage() {
   const { setDbConnected, setLoading, reset } = useAppStore()
   const { currentTheme, themeMode, setTheme, setThemeMode } = useThemeStore()
@@ -29,6 +34,9 @@ function SettingsPage() {
   const [imageAesKey, setImageAesKey] = useState('')
   const [dbPath, setDbPath] = useState('')
   const [wxid, setWxid] = useState('')
+  const [wxidOptions, setWxidOptions] = useState<WxidOption[]>([])
+  const [showWxidSelect, setShowWxidSelect] = useState(false)
+  const wxidDropdownRef = useRef<HTMLDivElement>(null)
   const [cachePath, setCachePath] = useState('')
   const [logEnabled, setLogEnabled] = useState(false)
 
@@ -52,6 +60,17 @@ function SettingsPage() {
     loadConfig()
     loadAppVersion()
   }, [])
+
+  // 点击外部关闭下拉框
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (showWxidSelect && wxidDropdownRef.current && !wxidDropdownRef.current.contains(e.target as Node)) {
+        setShowWxidSelect(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showWxidSelect])
 
   useEffect(() => {
     const removeDb = window.electronAPI.key.onDbKeyStatus((payload) => {
@@ -156,12 +175,14 @@ function SettingsPage() {
         showMessage(`自动检测成功：${result.path}`, true)
 
         const wxids = await window.electronAPI.dbPath.scanWxids(result.path)
+        setWxidOptions(wxids)
         if (wxids.length === 1) {
           setWxid(wxids[0].wxid)
           await configService.setMyWxid(wxids[0].wxid)
           showMessage(`已检测到账号：${wxids[0].wxid}`, true)
         } else if (wxids.length > 1) {
-          showMessage(`检测到 ${wxids.length} 个账号，请手动选择`, true)
+          // 多账号时弹出选择对话框
+          setShowWxidSelect(true)
         }
       } else {
         showMessage(result.error || '未能自动检测到数据库目录', false)
@@ -192,18 +213,27 @@ function SettingsPage() {
     }
     try {
       const wxids = await window.electronAPI.dbPath.scanWxids(dbPath)
+      setWxidOptions(wxids)
       if (wxids.length === 1) {
         setWxid(wxids[0].wxid)
         await configService.setMyWxid(wxids[0].wxid)
         if (!silent) showMessage(`已检测到账号：${wxids[0].wxid}`, true)
       } else if (wxids.length > 1) {
-        if (!silent) showMessage(`检测到 ${wxids.length} 个账号，请手动选择`, true)
+        // 多账号时弹出选择对话框
+        setShowWxidSelect(true)
       } else {
         if (!silent) showMessage('未检测到账号目录，请检查路径', false)
       }
     } catch (e) {
       if (!silent) showMessage(`扫描失败: ${e}`, false)
     }
+  }
+
+  const handleSelectWxid = async (selectedWxid: string) => {
+    setWxid(selectedWxid)
+    await configService.setMyWxid(selectedWxid)
+    setShowWxidSelect(false)
+    showMessage(`已选择账号：${selectedWxid}`, true)
   }
 
   const handleSelectCachePath = async () => {
@@ -466,7 +496,38 @@ function SettingsPage() {
       <div className="form-group">
         <label>账号 wxid</label>
         <span className="form-hint">微信账号标识</span>
-        <input type="text" placeholder="例如: wxid_xxxxxx" value={wxid} onChange={(e) => setWxid(e.target.value)} />
+        <div className="wxid-input-wrapper" ref={wxidDropdownRef}>
+          <input 
+            type="text" 
+            placeholder="例如: wxid_xxxxxx" 
+            value={wxid} 
+            onChange={(e) => setWxid(e.target.value)} 
+          />
+          <button 
+            type="button" 
+            className={`wxid-dropdown-btn ${showWxidSelect ? 'open' : ''}`}
+            onClick={() => wxidOptions.length > 0 ? setShowWxidSelect(!showWxidSelect) : handleScanWxid()}
+            title={wxidOptions.length > 0 ? "选择已检测到的账号" : "扫描账号"}
+          >
+            <ChevronDown size={16} />
+          </button>
+          {showWxidSelect && wxidOptions.length > 0 && (
+            <div className="wxid-dropdown">
+              {wxidOptions.map((opt) => (
+                <div 
+                  key={opt.wxid} 
+                  className={`wxid-option ${opt.wxid === wxid ? 'active' : ''}`}
+                  onClick={() => handleSelectWxid(opt.wxid)}
+                >
+                  <span className="wxid-value">{opt.wxid}</span>
+                  <span className="wxid-time">
+                    {new Date(opt.modifiedTime).toLocaleDateString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <button className="btn btn-secondary btn-sm" onClick={() => handleScanWxid()}><Search size={14} /> 扫描 wxid</button>
       </div>
 
@@ -603,6 +664,33 @@ function SettingsPage() {
   return (
     <div className="settings-page">
       {message && <div className={`message-toast ${message.success ? 'success' : 'error'}`}>{message.text}</div>}
+
+      {/* 多账号选择对话框 */}
+      {showWxidSelect && wxidOptions.length > 1 && (
+        <div className="wxid-dialog-overlay" onClick={() => setShowWxidSelect(false)}>
+          <div className="wxid-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="wxid-dialog-header">
+              <h3>检测到多个微信账号</h3>
+              <p>请选择要使用的账号</p>
+            </div>
+            <div className="wxid-dialog-list">
+              {wxidOptions.map((opt) => (
+                <div 
+                  key={opt.wxid} 
+                  className={`wxid-dialog-item ${opt.wxid === wxid ? 'active' : ''}`}
+                  onClick={() => handleSelectWxid(opt.wxid)}
+                >
+                  <span className="wxid-id">{opt.wxid}</span>
+                  <span className="wxid-date">最后修改: {new Date(opt.modifiedTime).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+            <div className="wxid-dialog-footer">
+              <button className="btn btn-secondary" onClick={() => setShowWxidSelect(false)}>取消</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="settings-header">
         <h1>设置</h1>

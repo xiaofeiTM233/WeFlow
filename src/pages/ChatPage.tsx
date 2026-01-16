@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { useChatStore } from '../stores/chatStore'
 import type { ChatSession, Message } from '../types/models'
 import { getEmojiPath } from 'wechat-emojis'
+import { ImagePreview } from '../components/ImagePreview'
 import './ChatPage.scss'
 
 interface ChatPageProps {
@@ -1682,14 +1683,8 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
               </button>
             )}
           </div>
-          {showImagePreview && createPortal(
-            <div className="image-preview-overlay" onClick={() => setShowImagePreview(false)}>
-              <img src={imageLocalPath} alt="图片预览" onClick={(e) => e.stopPropagation()} />
-              <button className="image-preview-close" onClick={() => setShowImagePreview(false)}>
-                <X size={16} />
-              </button>
-            </div>,
-            document.body
+          {showImagePreview && (
+            <ImagePreview src={imageLocalPath} onClose={() => setShowImagePreview(false)} />
           )}
         </>
       )
