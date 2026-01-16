@@ -1306,6 +1306,8 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
   const [imageClicked, setImageClicked] = useState(false)
   const imageUpdateCheckedRef = useRef<string | null>(null)
   const imageClickTimerRef = useRef<number | null>(null)
+  const imageContainerRef = useRef<HTMLDivElement>(null)
+  const imageAutoDecryptTriggered = useRef(false)
   const [voiceError, setVoiceError] = useState(false)
   const [voiceLoading, setVoiceLoading] = useState(false)
   const [isVoicePlaying, setIsVoicePlaying] = useState(false)
@@ -1555,6 +1557,31 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
     }
   }, [isImage, imageCacheKey, message.imageDatName, message.imageMd5])
 
+  // 图片进入视野前自动解密（懒加载）
+  useEffect(() => {
+    if (!isImage) return
+    if (imageLocalPath) return // 已有图片，不需要解密
+    if (!message.imageMd5 && !message.imageDatName) return
+    
+    const container = imageContainerRef.current
+    if (!container) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        // rootMargin 设置为 200px，提前触发解密
+        if (entry.isIntersecting && !imageAutoDecryptTriggered.current) {
+          imageAutoDecryptTriggered.current = true
+          void requestImageDecrypt()
+        }
+      },
+      { rootMargin: '200px', threshold: 0 }
+    )
+
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [isImage, imageLocalPath, message.imageMd5, message.imageDatName, requestImageDecrypt])
+
 
   useEffect(() => {
     if (!isVoice) return
@@ -1637,56 +1664,54 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat }:
   // 渲染消息内容
   const renderContent = () => {
     if (isImage) {
-      if (imageLoading) {
-        return (
-          <div className="image-loading">
-            <Loader2 size={20} className="spin" />
-          </div>
-        )
-      }
-      if (imageError || !imageLocalPath) {
-        return (
-          <button
-            className={`image-unavailable ${imageClicked ? 'clicked' : ''}`}
-            onClick={handleImageClick}
-            disabled={imageLoading}
-            type="button"
-          >
-            <ImageIcon size={24} />
-            <span>图片未解密</span>
-            <span className="image-action">{imageClicked ? '已点击…' : '点击解密'}</span>
-          </button>
-        )
-      }
       return (
-        <>
-          <div className="image-message-wrapper">
-            <img
-              src={imageLocalPath}
-              alt="图片"
-              className="image-message"
-              onClick={() => setShowImagePreview(true)}
-              onLoad={() => setImageError(false)}
-              onError={() => setImageError(true)}
-            />
-            {imageHasUpdate && (
-              <button
-                className="image-update-button"
-                type="button"
-                title="发现更高清图片，点击更新"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  void requestImageDecrypt(true)
-                }}
-              >
-                <RefreshCw size={14} />
-              </button>
-            )}
-          </div>
-          {showImagePreview && (
-            <ImagePreview src={imageLocalPath} onClose={() => setShowImagePreview(false)} />
+        <div ref={imageContainerRef}>
+          {imageLoading ? (
+            <div className="image-loading">
+              <Loader2 size={20} className="spin" />
+            </div>
+          ) : imageError || !imageLocalPath ? (
+            <button
+              className={`image-unavailable ${imageClicked ? 'clicked' : ''}`}
+              onClick={handleImageClick}
+              disabled={imageLoading}
+              type="button"
+            >
+              <ImageIcon size={24} />
+              <span>图片未解密</span>
+              <span className="image-action">{imageClicked ? '已点击…' : '点击解密'}</span>
+            </button>
+          ) : (
+            <>
+              <div className="image-message-wrapper">
+                <img
+                  src={imageLocalPath}
+                  alt="图片"
+                  className="image-message"
+                  onClick={() => setShowImagePreview(true)}
+                  onLoad={() => setImageError(false)}
+                  onError={() => setImageError(true)}
+                />
+                {imageHasUpdate && (
+                  <button
+                    className="image-update-button"
+                    type="button"
+                    title="发现更高清图片，点击更新"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void requestImageDecrypt(true)
+                    }}
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                )}
+              </div>
+              {showImagePreview && (
+                <ImagePreview src={imageLocalPath} onClose={() => setShowImagePreview(false)} />
+              )}
+            </>
           )}
-        </>
+        </div>
       )
     }
 

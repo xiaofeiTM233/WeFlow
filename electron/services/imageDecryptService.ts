@@ -11,10 +11,29 @@ import { wcdbService } from './wcdbService'
 // 获取 ffmpeg-static 的路径
 function getStaticFfmpegPath(): string | null {
   try {
+    // 方法1: 直接 require ffmpeg-static
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const ffmpegStatic = require('ffmpeg-static')
-    if (typeof ffmpegStatic === 'string') {
+    
+    if (typeof ffmpegStatic === 'string' && existsSync(ffmpegStatic)) {
       return ffmpegStatic
     }
+    
+    // 方法2: 手动构建路径（开发环境）
+    const devPath = join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg.exe')
+    if (existsSync(devPath)) {
+      return devPath
+    }
+    
+    // 方法3: 打包后的路径
+    if (app.isPackaged) {
+      const resourcesPath = process.resourcesPath
+      const packedPath = join(resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', 'ffmpeg.exe')
+      if (existsSync(packedPath)) {
+        return packedPath
+      }
+    }
+    
     return null
   } catch {
     return null
@@ -1543,15 +1562,13 @@ export class ImageDecryptService {
    */
   private getFfmpegPath(): string {
     const staticPath = getStaticFfmpegPath()
+    this.logInfo('ffmpeg 路径检测', { staticPath, exists: staticPath ? existsSync(staticPath) : false })
+    
     if (staticPath) {
-      const unpackedPath = staticPath.replace('app.asar', 'app.asar.unpacked')
-      if (existsSync(unpackedPath)) {
-        return unpackedPath
-      }
-      if (existsSync(staticPath)) {
-        return staticPath
-      }
+      return staticPath
     }
+    
+    // 回退到系统 ffmpeg
     return 'ffmpeg'
   }
 
@@ -1560,10 +1577,12 @@ export class ImageDecryptService {
    */
   private convertHevcToJpg(hevcData: Buffer): Promise<Buffer | null> {
     const ffmpeg = this.getFfmpegPath()
+    this.logInfo('ffmpeg 转换开始', { ffmpegPath: ffmpeg, hevcSize: hevcData.length })
     
     return new Promise((resolve) => {
       const { spawn } = require('child_process')
       const chunks: Buffer[] = []
+      const errChunks: Buffer[] = []
       
       const proc = spawn(ffmpeg, [
         '-hide_banner',
@@ -1580,16 +1599,23 @@ export class ImageDecryptService {
       })
       
       proc.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
+      proc.stderr.on('data', (chunk: Buffer) => errChunks.push(chunk))
       
       proc.on('close', (code: number) => {
         if (code === 0 && chunks.length > 0) {
+          this.logInfo('ffmpeg 转换成功', { outputSize: Buffer.concat(chunks).length })
           resolve(Buffer.concat(chunks))
         } else {
+          const errMsg = Buffer.concat(errChunks).toString()
+          this.logInfo('ffmpeg 转换失败', { code, error: errMsg })
           resolve(null)
         }
       })
       
-      proc.on('error', () => resolve(null))
+      proc.on('error', (err: Error) => {
+        this.logInfo('ffmpeg 进程错误', { error: err.message })
+        resolve(null)
+      })
       
       proc.stdin.write(hevcData)
       proc.stdin.end()
