@@ -16,7 +16,7 @@ jobs:
       - name: Check out git repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -44,15 +44,9 @@ jobs:
         uses: mikepenz/release-changelog-builder-action@v4
         with:
           outputFile: "release-notes.md"
-          template: |
-            # ${{ github.ref_name }} 更新日志
-
-            {{CHANGELOG}}
-
-            ---
-            > 此更新由系统自动构建
           configurationJson: |
             {
+              "template": "# ${{ github.ref_name }} 更新日志\n\n{{CHANGELOG}}\n\n---\n> 此更新由系统自动构建",
               "categories": [
                 {
                   "title": "##  新功能",
