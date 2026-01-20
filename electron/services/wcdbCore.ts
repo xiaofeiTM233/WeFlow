@@ -110,7 +110,7 @@ export class WcdbCore {
   private writeLog(message: string, force = false): void {
     if (!force && !this.isLogEnabled()) return
     const line = `[${new Date().toISOString()}] ${message}`
-    console.log(`[WCDB] ${line}`)
+    // 移除控制台日志，只写入文件
     try {
       const base = this.userDataPath || process.env.WCDB_LOG_DIR || process.cwd()
       const dir = join(base, 'logs')
@@ -382,6 +382,12 @@ export class WcdbCore {
         return { success: true, sessionCount: 0 }
       }
 
+      // 记录当前活动连接，用于在测试结束后恢复（避免影响聊天页等正在使用的连接）
+      const hadActiveConnection = this.handle !== null
+      const prevPath = this.currentPath
+      const prevKey = this.currentKey
+      const prevWxid = this.currentWxid
+
       if (!this.initialized) {
         const initOk = await this.initialize()
         if (!initOk) {
@@ -424,8 +430,8 @@ export class WcdbCore {
         return { success: false, error: '无效的数据库句柄' }
       }
 
-      // 测试成功，使用 shutdown 清理所有资源（包括测试句柄）
-      // 这会中断当前活动连接，但 testConnection 本应该是独立测试
+      // 测试成功：使用 shutdown 清理资源（包括测试句柄）
+      // 注意：shutdown 会断开当前活动连接，因此需要在测试后尝试恢复之前的连接
       try {
         this.wcdbShutdown()
         this.handle = null
@@ -435,6 +441,15 @@ export class WcdbCore {
         this.initialized = false
       } catch (closeErr) {
         console.error('关闭测试数据库时出错:', closeErr)
+      }
+
+      // 恢复测试前的连接（如果之前有活动连接）
+      if (hadActiveConnection && prevPath && prevKey && prevWxid) {
+        try {
+          await this.open(prevPath, prevKey, prevWxid)
+        } catch {
+          // 恢复失败则保持断开，由调用方处理
+        }
       }
 
       return { success: true, sessionCount: 0 }
@@ -620,7 +635,7 @@ export class WcdbCore {
         try {
           this.wcdbSetMyWxid(this.handle, wxid)
         } catch (e) {
-          console.warn('设置 wxid 失败:', e)
+          // 静默失败
         }
       }
       if (this.isLogEnabled()) {
@@ -799,7 +814,6 @@ export class WcdbCore {
       await new Promise(resolve => setImmediate(resolve))
 
       if (result !== 0 || !outPtr[0]) {
-        console.warn(`[wcdbCore] getAvatarUrls DLL调用失败: result=${result}, usernames=${toFetch.length}`)
         if (Object.keys(resultMap).length > 0) {
           return { success: true, map: resultMap, error: `获取头像失败: ${result}` }
         }
@@ -807,25 +821,18 @@ export class WcdbCore {
       }
       const jsonStr = this.decodeJsonPtr(outPtr[0])
       if (!jsonStr) {
-        console.error('[wcdbCore] getAvatarUrls 解析JSON失败')
         return { success: false, error: '解析头像失败' }
       }
       const map = JSON.parse(jsonStr) as Record<string, string>
-      let successCount = 0
-      let emptyCount = 0
       for (const username of toFetch) {
         const url = map[username]
         if (url && url.trim()) {
           resultMap[username] = url
           // 只缓存有效的URL
           this.avatarUrlCache.set(username, { url, updatedAt: now })
-          successCount++
-        } else {
-          emptyCount++
-          // 不缓存空URL,下次可以重新尝试
         }
+        // 不缓存空URL,下次可以重新尝试
       }
-      console.log(`[wcdbCore] getAvatarUrls 成功: ${successCount}个, 空结果: ${emptyCount}个, 总请求: ${toFetch.length}`)
       return { success: true, map: resultMap }
     } catch (e) {
       console.error('[wcdbCore] getAvatarUrls 异常:', e)
