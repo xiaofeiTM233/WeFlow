@@ -166,6 +166,7 @@ function SettingsPage() {
         await configService.setTranscribeLanguages(defaultLanguages)
       }
 
+
       if (savedWhisperModelDir) setWhisperModelDir(savedWhisperModelDir)
     } catch (e) {
       console.error('加载配置失败:', e)
@@ -1074,6 +1075,7 @@ function SettingsPage() {
           )}
         </div>
       </div>
+
     </div>
     )
   }
@@ -1225,4 +1227,3 @@ function SettingsPage() {
 }
 
 export default SettingsPage
-
